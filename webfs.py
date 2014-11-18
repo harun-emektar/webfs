@@ -1,4 +1,6 @@
-# Copyright 2014 Harun Emektar
+#!/usr/bin/python
+
+# Copyright (C) 2014 Harun Emektar
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,20 +16,27 @@
 
 # http://fuse.sourceforge.net/wiki/index.php/FusePython
 import fuse
-
-#!/usr/bin/python
-
-import fuse
 import HTMLParser
 import stat
 import errno
 import urllib2
 import os
-from time import time
+from time import time, strptime
 
 fuse.fuse_python_api = (0, 2)
 
 class WebDirParser(HTMLParser.HTMLParser):
+	class Stat():
+		def __init__(self, isDir):
+			if isDir: 
+				self.st_mode = stat.S_IFDIR | 0555
+				self.st_size = 4096
+			else: 
+				self.st_mode = stat.S_IFREG | 0444
+				self.st_size = 0
+			self.st_time = int(time())
+		def isDir(self):
+			return self.st_mode & stat.S_IFDIR
 	def __init__(self):
 		HTMLParser.HTMLParser.__init__(self);
 		self.path=""
@@ -49,33 +58,37 @@ class WebDirParser(HTMLParser.HTMLParser):
 			self._entriesStarted = True
 		elif self._curTag == "a" and self._entriesStarted:
 			isDir = len(data.split("/")) > 1
-			self.entries[ data.split("/")[0] ] = WebFSStat(isDir)
+			self.entries[ data.split("/")[0] ] = WebDirParser.Stat(isDir)
 			self._lastFile = data.split("/")[0]
-		elif self._entriesStarted and self._lastFile and not self.entries[self._lastFile].isDir():
+		elif self._entriesStarted and self._lastFile:
 			attr = data.strip().split()
 			print attr
 			if len(attr) == 3:
-				size = attr[-1]
-				isize = 0
-				if size[-1] in "KMG":
-					isize = float(size[0:-1])
-					if size[-1] == "K":
-						isize *= 1024
-					elif size[-1] == "M":
-						isize *= 1024 * 1024
-					elif size[-1] == "G":
-						isize *= 1024 * 1024 * 1024
-					isize = int(isize)
-				else:
-					isize = int(size)
-				self.entries[self._lastFile].st_size = isize
+				if not self.entries[self._lastFile].isDir():
+					size = attr[-1]
+					isize = 0
+					if size[-1] in "KMG":
+						isize = float(size[0:-1])
+						if size[-1] == "K":
+							isize *= 1024
+						elif size[-1] == "M":
+							isize *= 1024 * 1024
+						elif size[-1] == "G":
+							isize *= 1024 * 1024 * 1024
+						isize = int(isize)
+					else:
+						isize = int(size)
+					self.entries[self._lastFile].st_size = isize
+				strtime = attr[0] + " " + attr[1]
+				time = strptime(strtime, '%d-%b-%Y %H:%M')
+				self.entries[self._lastFile].st_time = time;
 
 class WebFSStat(fuse.Stat):
 	def __init__(self, isDir=True):
 		if isDir:
 			self.st_mode = stat.S_IFDIR | 0555
 		else:
-			self.st_mode = stat.S_IFREG | 0555
+			self.st_mode = stat.S_IFREG | 0444
 		self.st_ino = 0
 		self.st_dev = 0
 		self.st_nlink = 2
@@ -89,6 +102,10 @@ class WebFSStat(fuse.Stat):
 		return self.st_mode & stat.S_IFDIR
 class ResourceNotFound(Exception):
 	pass
+
+class WebFSProxy():
+	def __init__(self, rootURL):
+		self._rootURL = rootURL
 
 class WebFS(fuse.Fuse):
 	def __init__(self, *args, **kw):
@@ -166,11 +183,11 @@ class WebFS(fuse.Fuse):
 
 	def chmod ( self, path, mode ):
 		print '*** chmod', path, oct(mode)
-		return 0
+		return -errno.EPERM
 
 	def chown ( self, path, uid, gid ):
 		print '*** chown', path, uid, gid
-		return 0
+		return -errno.EPERM
 
 	def fsync ( self, path, isFsyncFile ):
 		print '*** fsync', path, isFsyncFile
@@ -178,15 +195,15 @@ class WebFS(fuse.Fuse):
 
 	def link ( self, targetPath, linkPath ):
 		print '*** link', targetPath, linkPath
-		return 0
+		return -errno.EPERM
 
 	def mkdir ( self, path, mode ):
 		print '*** mkdir', path, oct(mode)
-		return 0
+		return -errno.EPERM
 
 	def mknod ( self, path, mode, dev ):
 		print '*** mknod', path, oct(mode), dev
-		return 0
+		return -errno.EPERM
 
 	def open ( self, path, flags ):
 		if path == "/":
@@ -227,11 +244,11 @@ class WebFS(fuse.Fuse):
 
 	def rename ( self, oldPath, newPath ):
 		print '*** rename', oldPath, newPath
-		return 0
+		return -errno.EPERM
 
 	def rmdir ( self, path ):
 		print '*** rmdir', path
-		return 0
+		return -errno.EPERM
 
 	def statfs ( self ):
 		print '*** statfs'
@@ -239,23 +256,23 @@ class WebFS(fuse.Fuse):
 
 	def symlink ( self, targetPath, linkPath ):
 		print '*** symlink', targetPath, linkPath
-		return 0
+		return -errno.EPERM
 
 	def truncate ( self, path, size ):
 		print '*** truncate', path, size
-		return 0
+		return -errno.EPERM
 
 	def unlink ( self, path ):
 		print '*** unlink', path
-		return 0
+		return -errno.EPERM
 
 	def utime ( self, path, times ):
 		print '*** utime', path, times
-		return 0
+		return -errno.EPERM
 
 	def write ( self, path, buf, offset ):
 		print '*** write', path, buf, offset
-		return 0
+		return -errno.EPERM
 
 def main():
 	webFS = WebFS()
